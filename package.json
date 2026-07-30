@@ -1,0 +1,92 @@
+{
+  "name": "flyte-sdk-ts",
+  "version": "0.1.0",
+  "description": "Official JavaScript/TypeScript client for Flyte 2 — trigger runs, track status, fetch outputs, upload data, with client-credentials auth. One client, all options.",
+  "license": "SEE LICENSE IN UNION-LICENSE.txt",
+  "homepage": "https://github.com/unionai-oss/flyte-sdk-ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unionai-oss/flyte-sdk-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/unionai-oss/flyte-sdk-ts/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./gen/*": {
+      "types": "./dist/gen/*.d.ts",
+      "import": "./dist/gen/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "NOTICE.txt",
+    "UNION-LICENSE.txt"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "gen": "buf dep update && buf generate buf.build/flyteorg/flyte --template buf.gen.yaml",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "example:run": "tsx examples/run-noop.ts",
+    "example:quickstart": "tsx examples/quickstart.ts",
+    "example:auth": "tsx examples/auth-test.ts",
+    "example:session": "tsx examples/session-browser-test.ts",
+    "example:scan-tasks": "tsx examples/scan-tasks.ts",
+    "test:m2m": "pnpm example:run",
+    "test:auth": "pnpm example:auth",
+    "test:session": "pnpm example:session",
+    "demo:ssl": "bash examples/browser-demo/generate-ssl.sh",
+    "demo:token": "tsx examples/token-server.ts",
+    "demo:client": "bash examples/browser-demo/generate-ssl.sh && vite --config examples/browser-demo/vite.config.ts",
+    "demo:browser": "concurrently -k -n token,vite -c blue,green \"pnpm demo:token\" \"pnpm demo:client\"",
+    "demo:browser:proof": "tsx examples/browser-demo-proof.ts"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.2.5",
+    "@connectrpc/connect": "^2.0.2",
+    "@connectrpc/connect-web": "^2.0.2"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.47.2",
+    "@types/node": "^26.1.0",
+    "concurrently": "^10.0.3",
+    "dotenv": "^16.4.7",
+    "esbuild": "^0.28.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
+    "playwright": "^1.61.1",
+    "tsup": "^8.3.5",
+    "tsx": "^4.22.4",
+    "typescript": "^5.6.3",
+    "vite": "^8.1.2"
+  },
+  "keywords": [
+    "flyte",
+    "flyte2",
+    "workflow",
+    "orchestration",
+    "connectrpc",
+    "sdk"
+  ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@bufbuild/buf"
+    ]
+  }
+}

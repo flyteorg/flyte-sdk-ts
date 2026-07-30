@@ -1,0 +1,4 @@
+version: v2
+# flyteidl2 protos — used by `pnpm gen` to refresh src/gen/
+deps:
+  - buf.build/flyteorg/flyte

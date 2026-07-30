@@ -1,0 +1,22 @@
+# Dependencies & build
+node_modules/
+dist/
+
+# Secrets & local config
+.env
+.env.*
+!.env.example
+
+# Browser demo (local certs + dev artifacts)
+examples/browser-demo/certificate/
+examples/.session-bundle.js
+examples/.session-profile/
+
+# Playwright / test artifacts
+test-results/
+playwright-report/
+blob-report/
+
+# OS & editor
+.DS_Store
+*.log

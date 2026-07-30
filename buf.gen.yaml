@@ -1,0 +1,17 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: optimize_for
+      value: CODE_SIZE
+  disable:
+    - module: buf.build/bufbuild/protovalidate
+plugins:
+  # Generates the flyteidl2 message + service descriptors used by the high-level
+  # client. Uses extensionless imports so the output bundles cleanly with tsup.
+  - remote: buf.build/bufbuild/es:v2.2.5
+    out: src/gen
+    include_imports: true
+    opt:
+      - target=ts
+      - import_extension=none

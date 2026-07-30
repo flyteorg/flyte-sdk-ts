@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flyte SDK — browser client demo</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+      }
+      h1 { font-size: 1.25rem; margin-bottom: 0.25rem; }
+      .sub { color: #666; font-size: 0.875rem; margin-bottom: 1rem; }
+      .note {
+        background: #eff6ff;
+        border: 1px solid #93c5fd;
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        font-size: 0.8125rem;
+        margin-bottom: 1.5rem;
+      }
+      .note code { font-size: 0.75rem; }
+      button {
+        padding: 0.5rem 1rem;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+        cursor: pointer;
+        font-size: 0.875rem;
+      }
+      pre {
+        background: #111;
+        color: #0f0;
+        padding: 1rem;
+        border-radius: 6px;
+        overflow: auto;
+        font-size: 0.75rem;
+        min-height: 200px;
+        white-space: pre-wrap;
+      }
+      .mode { margin: 1rem 0; }
+      label { font-size: 0.875rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Flyte SDK — real browser client</h1>
+    <p class="sub">
+      Local UI on <code>localhost.&lt;your-admin-host&gt;</code>, API calls go to your
+      Flyte endpoint (console-style local dev).
+    </p>
+
+    <div class="note">
+      <strong>Setup</strong> (see repo <code>.env.example</code>):<br />
+      1. <code>/etc/hosts</code>: <code>127.0.0.1 &lt;FLYTE_DEMO_HOST&gt;</code><br />
+      2. <code>brew install mkcert && mkcert -install</code> (once)<br />
+      3. Copy <code>.env.example</code> → <code>.env</code> and fill in values<br />
+      4. <code>pnpm demo:client</code><br /><br />
+      Open <code>https://&lt;FLYTE_DEMO_HOST&gt;:8080</code>
+    </div>
+
+    <div class="mode">
+      <label>
+        <input type="radio" name="auth" value="session" checked />
+        Session — log in via your Flyte host (cookies via localhost.&lt;domain&gt;)
+      </label>
+      <br />
+      <label>
+        <input type="radio" name="auth" value="bearer" />
+        Bearer — <code>pnpm demo:token</code> sidecar (Next.js BFF pattern)
+      </label>
+    </div>
+
+    <button id="login">Log in (session)</button>
+    <button id="list">List tasks</button>
+    <button id="run">Run task</button>
+    <button id="clear">Clear log</button>
+
+    <pre id="log">Ready. Configure .env then pnpm demo:client.</pre>
+
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>
