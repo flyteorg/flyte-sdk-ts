@@ -16,6 +16,9 @@ async function exchangeToken(): Promise<string> {
     throw new Error('Set FLYTE_API_KEY')
   }
   const { clientId, clientSecret } = config.auth
+  if (!clientSecret) {
+    throw new Error('Set FLYTE_API_KEY (or an inline client secret)')
+  }
   const oauth = await discoverOAuth2Metadata(config.endpoint)
   const basic = Buffer.from(
     `${encodeURIComponent(clientId)}:${encodeURIComponent(clientSecret)}`,

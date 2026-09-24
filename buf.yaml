@@ -1,4 +1,5 @@
 version: v2
-# flyteidl2 protos — used by `pnpm gen` to refresh src/gen/
-deps:
-  - buf.build/flyteorg/flyte
+# `src/gen/` is generated from the flyteidl2 protos in a checkout of
+# https://github.com/flyteorg/flyte — see `pnpm gen` (scripts/gen-protos.js).
+# That checkout supplies the protos and their own dependencies, so no module
+# dependencies are declared here.

@@ -34,22 +34,30 @@ interface CachedToken {
 
 type ClientCredentialsAuth = Extract<ResolvedAuth, { mode: 'client_credentials' }>
 
-/** Discovers OAuth2 metadata from the server (anonymous RPC). */
-export async function discoverOAuth2Metadata(endpoint: string) {
-  const transport = createConnectTransport({
-    baseUrl: normalizeEndpoint(endpoint),
-  })
-  const client = createClient(AuthMetadataService, transport)
+/**
+ * Discovers OAuth2 metadata from the server (anonymous RPC). Pass the
+ * client's `fetch` so discovery honors its TLS trust settings.
+ */
+export async function discoverOAuth2Metadata(endpoint: string, fetchFn?: typeof fetch) {
+  const client = createClient(AuthMetadataService, authTransport(endpoint, fetchFn))
   return client.getOAuth2Metadata({})
 }
 
-/** Discovers browser OAuth client config (anonymous RPC). */
-export async function discoverPublicClientConfig(endpoint: string) {
-  const transport = createConnectTransport({
-    baseUrl: normalizeEndpoint(endpoint),
-  })
-  const client = createClient(AuthMetadataService, transport)
+/**
+ * Discovers browser OAuth client config (anonymous RPC). Pass the client's
+ * `fetch` so discovery honors its TLS trust settings.
+ */
+export async function discoverPublicClientConfig(endpoint: string, fetchFn?: typeof fetch) {
+  const client = createClient(AuthMetadataService, authTransport(endpoint, fetchFn))
   return client.getPublicClientConfig({})
+}
+
+/** Transport for the anonymous auth-metadata service. */
+function authTransport(endpoint: string, fetchFn?: typeof fetch): Transport {
+  return createConnectTransport({
+    baseUrl: normalizeEndpoint(endpoint),
+    ...(fetchFn ? { fetch: fetchFn } : {}),
+  })
 }
 
 /** Builds the login URL used by the Flyte console and session auth refresh. */
@@ -65,12 +73,15 @@ export function buildLoginUrl(
  * Attempts to refresh session cookies (Okta refresh token flow on the server).
  * Same approach as the Flyte 2 console — opaque `no-cors` fetch to `/login`.
  */
-export async function refreshSession(config: Pick<ResolvedConfig, 'endpoint' | 'auth'>): Promise<void> {
+export async function refreshSession(
+  config: Pick<ResolvedConfig, 'endpoint' | 'auth'>,
+  fetchFn: typeof fetch = fetch,
+): Promise<void> {
   if (config.auth.mode !== 'session') {
     throw new FlyteAuthError('refreshSession requires session auth mode.')
   }
   const loginUrl = buildLoginUrl(config.endpoint, config.auth.loginRedirectPath)
-  await fetch(loginUrl, {
+  await fetchFn(loginUrl, {
     method: 'GET',
     headers: { Accept: 'text/html' },
     credentials: config.auth.credentials,
@@ -122,14 +133,25 @@ export function createBrowserAuth(options: {
   }
 }
 
-export class TokenManager {
+/** A source of bearer tokens that can be told its token went stale. */
+export interface TokenSource {
+  getToken(): Promise<string>
+  /** Drops any cached token so the next {@link getToken} mints a fresh one. */
+  invalidate(): void | Promise<void>
+}
+
+export class TokenManager implements TokenSource {
   private cached: CachedToken | undefined
   private inflight: Promise<string> | undefined
   private discoveredTokenEndpoint: string | undefined
+  private discoveredScopes: string[] | undefined
+  private discoveredAudience: string | undefined
 
   constructor(
     private readonly endpoint: string,
     private readonly auth: ClientCredentialsAuth,
+    /** Used for discovery and the token request, so TLS settings apply. */
+    private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
   async getToken(): Promise<string> {
@@ -144,16 +166,41 @@ export class TokenManager {
     return this.inflight
   }
 
+  invalidate(): void {
+    this.cached = undefined
+  }
+
+  /** Resolves the client secret, reading `clientSecretLocation` lazily (Node). */
+  private async resolveClientSecret(): Promise<string> {
+    if (this.auth.clientSecret) return this.auth.clientSecret
+    if (this.auth.clientSecretLocation) {
+      try {
+        const fs = await import('node:fs/promises')
+        const secret = (await fs.readFile(this.auth.clientSecretLocation, 'utf8')).trim()
+        if (secret) return secret
+      } catch (cause) {
+        throw new FlyteAuthError(
+          `Failed to read client secret from ${this.auth.clientSecretLocation}.`,
+          { cause },
+        )
+      }
+    }
+    throw new FlyteAuthError('No client secret configured.')
+  }
+
   private async fetchToken(): Promise<string> {
     const tokenEndpoint = await this.resolveTokenEndpoint()
+    const clientSecret = await this.resolveClientSecret()
 
     const body = new URLSearchParams()
     body.set('grant_type', 'client_credentials')
-    if (this.auth.scopes.length > 0) {
-      body.set('scope', this.auth.scopes.join(' '))
+    const scopes = this.discoveredScopes ?? this.auth.scopes
+    if (scopes.length > 0) {
+      body.set('scope', scopes.join(' '))
     }
-    if (this.auth.audience) {
-      body.set('audience', this.auth.audience)
+    const audience = this.auth.audience ?? this.discoveredAudience
+    if (audience) {
+      body.set('audience', audience)
     }
 
     const headers: Record<string, string> = {
@@ -162,17 +209,17 @@ export class TokenManager {
     }
     if (this.auth.clientAuthMethod === 'post') {
       body.set('client_id', this.auth.clientId)
-      body.set('client_secret', this.auth.clientSecret)
+      body.set('client_secret', clientSecret)
     } else {
       const basic = toBase64(
-        `${encodeURIComponent(this.auth.clientId)}:${encodeURIComponent(this.auth.clientSecret)}`,
+        `${encodeURIComponent(this.auth.clientId)}:${encodeURIComponent(clientSecret)}`,
       )
       headers.authorization = `Basic ${basic}`
     }
 
     let res: Response
     try {
-      res = await fetch(tokenEndpoint, { method: 'POST', headers, body })
+      res = await this.fetchFn(tokenEndpoint, { method: 'POST', headers, body })
     } catch (cause) {
       throw new FlyteAuthError(`Token request to ${tokenEndpoint} failed.`, { cause })
     }
@@ -200,23 +247,53 @@ export class TokenManager {
     return this.cached.accessToken
   }
 
+  /**
+   * Resolves the token endpoint and, when the caller did not pin them, the
+   * scopes and audience the server advertises — matching how the Go and
+   * Python SDKs let the deployment decide.
+   */
   private async resolveTokenEndpoint(): Promise<string> {
     if (this.auth.tokenEndpoint) return this.auth.tokenEndpoint
     if (this.discoveredTokenEndpoint) return this.discoveredTokenEndpoint
 
+    const transport = authTransport(this.endpoint, this.fetchFn)
+    let tokenEndpoint: string
     try {
-      const transport: Transport = createConnectTransport({ baseUrl: this.endpoint })
       const client = createClient(AuthMetadataService, transport)
       const meta = await client.getOAuth2Metadata({})
-      if (meta.tokenEndpoint) {
-        this.discoveredTokenEndpoint = meta.tokenEndpoint
-        return meta.tokenEndpoint
+      if (!meta.tokenEndpoint) {
+        throw new FlyteAuthError(
+          `${this.endpoint} did not advertise an OAuth2 token endpoint. ` +
+            'Set auth.tokenEndpoint explicitly.',
+        )
       }
-    } catch {
-      // fall through
+      tokenEndpoint = meta.tokenEndpoint
+    } catch (cause) {
+      if (cause instanceof FlyteAuthError) throw cause
+      throw new FlyteAuthError(
+        `Failed to discover the OAuth2 token endpoint from ${this.endpoint}. ` +
+          'Set auth.tokenEndpoint explicitly if the server has no discovery endpoint.',
+        { cause },
+      )
     }
-    this.discoveredTokenEndpoint = `${this.endpoint}/oauth2/token`
-    return this.discoveredTokenEndpoint
+
+    if (!this.auth.scopesExplicit || this.auth.audience === undefined) {
+      try {
+        const client = createClient(AuthMetadataService, transport)
+        const pub = await client.getPublicClientConfig({})
+        if (!this.auth.scopesExplicit && pub.scopes.length > 0) {
+          this.discoveredScopes = pub.scopes
+        }
+        if (this.auth.audience === undefined && pub.audience) {
+          this.discoveredAudience = pub.audience
+        }
+      } catch {
+        // Scope/audience discovery is best effort; the configured defaults apply.
+      }
+    }
+
+    this.discoveredTokenEndpoint = tokenEndpoint
+    return tokenEndpoint
   }
 }
 
@@ -240,17 +317,46 @@ function setBearerHeaders(req: { header: Headers }, token: string, headerKey: st
   }
 }
 
+/**
+ * Attaches a bearer token to every request and, when the server answers
+ * `Unauthenticated`, drops the cached token and retries the request once with
+ * a freshly minted one.
+ *
+ * The retry covers tokens that are still locally unexpired but no longer
+ * accepted — revoked, rotated server-side, or invalidated by clock skew.
+ * Streaming calls are not retried; their consumers reconnect themselves.
+ */
+export function createBearerAuthInterceptor(
+  source: TokenSource,
+  headerKey: string,
+): Interceptor {
+  return (next) => async (req) => {
+    setBearerHeaders(req, await source.getToken(), headerKey)
+    try {
+      return await next(req)
+    } catch (err) {
+      const reauthable =
+        !req.stream && err instanceof ConnectError && err.code === Code.Unauthenticated
+      if (!reauthable) throw err
+      await source.invalidate()
+      setBearerHeaders(req, await source.getToken(), headerKey)
+      return next(req)
+    }
+  }
+}
+
 export function createTokenManagerInterceptor(
   tokenManager: TokenManager,
   headerKey: string,
 ): Interceptor {
-  return (next) => async (req) => {
-    const token = await tokenManager.getToken()
-    setBearerHeaders(req, token, headerKey)
-    return next(req)
-  }
+  return createBearerAuthInterceptor(tokenManager, headerKey)
 }
 
+/**
+ * Attaches a fixed bearer token. Unlike the other bearer paths this does not
+ * retry on `Unauthenticated`: there is no way to mint a different token, so
+ * replaying the request would fail identically.
+ */
 export function createBearerInterceptor(
   token: string,
   headerKey: string,
@@ -264,12 +370,9 @@ export function createBearerInterceptor(
 export function createDynamicBearerInterceptor(
   getAccessToken: () => Promise<string>,
   headerKey: string,
+  invalidate: () => void | Promise<void> = () => {},
 ): Interceptor {
-  return (next) => async (req) => {
-    const token = await getAccessToken()
-    setBearerHeaders(req, token, headerKey)
-    return next(req)
-  }
+  return createBearerAuthInterceptor({ getToken: getAccessToken, invalidate }, headerKey)
 }
 
 export function createHeadersInterceptor(headers: Record<string, string>): Interceptor {
@@ -307,13 +410,14 @@ export function createCredentialsFetch(
   baseUrl: string,
   credentials: RequestCredentials,
   sendCredentialsOnLocalhost = false,
+  baseFetch: typeof fetch = fetch,
 ): typeof fetch {
   const isLocal =
     baseUrl.includes('localhost') ||
     baseUrl.includes('127.0.0.1')
   const sendCredentials = sendCredentialsOnLocalhost || !isLocal
   return (input, init) =>
-    fetch(input, {
+    baseFetch(input, {
       ...init,
       ...(sendCredentials ? { credentials } : {}),
     })

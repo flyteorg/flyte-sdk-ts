@@ -1,7 +1,7 @@
 {
   "name": "flyte-sdk-ts",
   "version": "0.1.0",
-  "description": "Official JavaScript/TypeScript client for Flyte 2 — trigger runs, track status, fetch outputs, upload data, with client-credentials auth. One client, all options.",
+  "description": "Official JavaScript/TypeScript client for Flyte 2 \u2014 trigger runs, track status, fetch outputs, upload data, with client-credentials auth. One client, all options.",
   "license": "SEE LICENSE IN UNION-LICENSE.txt",
   "homepage": "https://github.com/unionai-oss/flyte-sdk-ts",
   "repository": {
@@ -38,12 +38,17 @@
   },
   "scripts": {
     "prepare": "husky",
-    "gen": "buf dep update && buf generate buf.build/flyteorg/flyte --template buf.gen.yaml",
+    "gen": "node scripts/gen-protos.js",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "clean": "rm -rf dist",
     "example:run": "tsx examples/run-noop.ts",
     "example:quickstart": "tsx examples/quickstart.ts",
+    "example:config": "tsx examples/config-file.ts",
+    "example:approve": "tsx examples/approve-condition.ts",
     "example:auth": "tsx examples/auth-test.ts",
     "example:session": "tsx examples/session-browser-test.ts",
     "example:scan-tasks": "tsx examples/scan-tasks.ts",
@@ -59,7 +64,16 @@
   "dependencies": {
     "@bufbuild/protobuf": "^2.2.5",
     "@connectrpc/connect": "^2.0.2",
-    "@connectrpc/connect-web": "^2.0.2"
+    "@connectrpc/connect-web": "^2.0.2",
+    "yaml": "^2.9.1"
+  },
+  "peerDependencies": {
+    "undici": ">=6"
+  },
+  "peerDependenciesMeta": {
+    "undici": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.47.2",
@@ -73,7 +87,8 @@
     "tsup": "^8.3.5",
     "tsx": "^4.22.4",
     "typescript": "^5.6.3",
-    "vite": "^8.1.2"
+    "vite": "^8.1.2",
+    "vitest": "^5.0.1"
   },
   "keywords": [
     "flyte",
@@ -82,11 +97,5 @@
     "orchestration",
     "connectrpc",
     "sdk"
-  ],
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "@bufbuild/buf"
-    ]
-  }
+  ]
 }

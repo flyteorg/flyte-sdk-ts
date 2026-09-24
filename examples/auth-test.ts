@@ -60,8 +60,8 @@ async function testBearerViaM2MToken(scope: ReturnType<typeof exampleScope>) {
     org: scope.org,
     auth: { apiKey: process.env.FLYTE_API_KEY },
   })
-  if (resolved.auth.mode !== 'client_credentials') {
-    throw new Error('expected client_credentials for token exchange')
+  if (resolved.auth.mode !== 'client_credentials' || !resolved.auth.clientSecret) {
+    throw new Error('expected client_credentials with an inline secret for token exchange')
   }
 
   const oauth = await discoverOAuth2Metadata(resolved.endpoint)

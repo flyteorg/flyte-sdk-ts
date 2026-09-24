@@ -13,56 +13,75 @@
  *   domain: 'development',
  * })
  *
- * const run = await flyte.run('my_task', { x: 1, name: 'hello' })
- * const details = await run.wait()
- * const { outputs } = await run.outputs()
+ * const run = await flyte.run({ task: 'my_env.my_task', inputs: { x: 1 } })
+ * await run.wait()
+ * const outputs = await run.outputs()
  * ```
  */
 
 import { create } from '@bufbuild/protobuf'
-import type { JsonObject } from '@bufbuild/protobuf'
+import { Code } from '@connectrpc/connect'
 
 import { discoverPublicClientConfig } from './auth'
-import type { FlyteConfig, ResolvedAuth, ResolvedConfig } from './config'
+import type {
+  AuthOptions,
+  FlyteConfig,
+  ResolvedAuth,
+  ResolvedConfig,
+  RunSourceName,
+} from './config'
 import { resolveConfig } from './config'
+import { findConfigPath, loadConfigFile } from './configFile'
 import { createContext, type ClientContext, type Services } from './context'
 import { DataClient } from './data'
-import { FlyteConfigError, FlyteError } from './errors'
+import {
+  FlyteAlreadyExistsError,
+  FlyteConfigError,
+  FlyteError,
+  FlyteNotFoundError,
+  isConnectCode,
+} from './errors'
 import {
   ProjectIdentifierSchema,
   RunIdentifierSchema,
 } from './gen/flyteidl2/common/identifier_pb'
 import { InputsSchema } from './gen/flyteidl2/task/common_pb'
-import type { RunSpec } from './gen/flyteidl2/task/run_pb'
-import {
-  TaskIdentifierSchema,
-  TaskNameSchema,
-} from './gen/flyteidl2/task/task_definition_pb'
 import type { CreateRunRequest } from './gen/flyteidl2/workflow/run_service_pb'
 import {
   CreateRunRequestSchema,
   ListRunsRequestSchema,
 } from './gen/flyteidl2/workflow/run_service_pb'
 import type { Run } from './gen/flyteidl2/workflow/run_definition_pb'
-import { RunSource } from './gen/flyteidl2/workflow/run_definition_pb'
+import {
+  ActionDetailsSchema,
+  RunSource,
+} from './gen/flyteidl2/workflow/run_definition_pb'
 import { UploadInputsRequestSchema } from './gen/flyteidl2/dataproxy/dataproxy_service_pb'
-import { JsonValuesToLiteralsRequestSchema } from './gen/flyteidl2/workflow/translator_service_pb'
+import { prepareInputs, taskInputsShape, type RunInputs } from './io'
+import type { RunOptions } from './options'
+import { buildRunSpec } from './options'
 import { RunHandle, type WaitOptions } from './run'
+import type { TaskRef } from './task'
+import { getTaskDetails, TaskDetails } from './task'
+import { createTlsFetch } from './tls'
 
 async function applyDiscoveredAuthHeader(
   resolved: ResolvedConfig,
-  explicitHeader?: string,
+  explicitHeader: string | undefined,
+  fetchFn: typeof fetch | undefined,
 ): Promise<void> {
   if (explicitHeader) return
-  if (
-    resolved.auth.mode !== 'client_credentials' &&
-    resolved.auth.mode !== 'bearer' &&
-    resolved.auth.mode !== 'bearer_dynamic'
-  ) {
-    return
-  }
+  const bearerModes: ResolvedAuth['mode'][] = [
+    'client_credentials',
+    'bearer',
+    'bearer_dynamic',
+    'pkce',
+    'device_flow',
+    'external_command',
+  ]
+  if (!bearerModes.includes(resolved.auth.mode)) return
   try {
-    const pub = await discoverPublicClientConfig(resolved.endpoint)
+    const pub = await discoverPublicClientConfig(resolved.endpoint, fetchFn)
     const key = (pub.authorizationMetadataKey || 'authorization').toLowerCase()
     ;(resolved.auth as ResolvedAuth & { authorizationHeader: string }).authorizationHeader = key
   } catch {
@@ -70,39 +89,61 @@ async function applyDiscoveredAuthHeader(
   }
 }
 
-/** A reference to a deployed task. A bare string is shorthand for `{ name }`. */
-export interface TaskRef {
-  name: string
-  /** Task version. When omitted, the latest deployed version is used. */
-  version?: string
+/** True when these auth options carry credentials of their own. */
+function suppliesCredentials(auth: AuthOptions | undefined): boolean {
+  if (!auth) return false
+  return Boolean(
+    auth.apiKey ||
+      auth.clientSecret ||
+      auth.clientSecretEnvVar ||
+      auth.clientSecretLocation ||
+      auth.bearerToken ||
+      auth.getAccessToken ||
+      auth.command ||
+      auth.session,
+  )
 }
 
-export type TaskInput = string | TaskRef
+const RUN_SOURCES: Record<RunSourceName, RunSource> = {
+  web: RunSource.WEB,
+  cli: RunSource.CLI,
+  unspecified: RunSource.UNSPECIFIED,
+}
+
+export type { TaskRef }
+
+export type TaskInput = string | TaskRef | TaskDetails
 
 /**
- * Arguments for {@link Flyte.run}. `project` and `domain` are always passed on
- * the call itself; `org` defaults to the client's org (from the API key).
+ * Arguments for {@link Flyte.run}. `project` and `domain` come from the call
+ * or fall back to the client defaults; `org` defaults to the client's org.
  */
-export interface RunArgs {
-  /** Task to run: a name (uses the latest version) or `{ name, version }`. */
+export interface RunArgs extends RunOptions {
+  /**
+   * Task to run: a name (uses the latest version), `{ name, version }`, or a
+   * {@link TaskDetails} previously fetched with {@link Flyte.getTask}.
+   */
   task: TaskInput
-  /** Project to run in. Required. */
-  project: string
-  /** Domain to run in. Required. */
-  domain: string
+  /** Project to run in. Falls back to the client default. */
+  project?: string
+  /** Domain to run in. Falls back to the client default. */
+  domain?: string
   /** Org override. Defaults to the client's configured org. */
   org?: string
-  /** Plain JSON inputs; converted to typed literals server-side. */
-  inputs?: JsonObject
+  /**
+   * Plain JavaScript inputs; validated against the task's typed interface
+   * and converted to typed literals. Omitted inputs fall back to the task's
+   * registered defaults.
+   */
+  inputs?: RunInputs
   /** Explicit run name. When omitted, the server generates one. */
   runName?: string
   /**
-   * Offload inputs through DataProxy before creating the run (recommended and
-   * required for large inputs). Defaults to `true`.
+   * Offload inputs through DataProxy before creating the run (recommended
+   * and required for large inputs). Defaults to `true`; older control planes
+   * without DataProxy fall back to inline inputs automatically.
    */
   offload?: boolean
-  /** Optional run spec (labels, envs, interruptible, cache overrides, ...). */
-  runSpec?: RunSpec
   /** If true, wait for the run to reach a terminal phase before returning. */
   wait?: boolean
   /** Options forwarded to {@link RunHandle.wait} when `wait` is true. */
@@ -111,10 +152,10 @@ export interface RunArgs {
 
 /** Org/project/domain scope passed to run lookups and listings. */
 export interface RunScope {
-  /** Project. Required. */
-  project: string
-  /** Domain. Required. */
-  domain: string
+  /** Project. Falls back to the client default. */
+  project?: string
+  /** Domain. Falls back to the client default. */
+  domain?: string
   /** Org override. Defaults to the client's configured org. */
   org?: string
 }
@@ -130,8 +171,55 @@ export class Flyte {
   /** Resolves configuration and constructs a client. */
   static async init(config?: FlyteConfig): Promise<Flyte> {
     const resolved = resolveConfig(config)
-    await applyDiscoveredAuthHeader(resolved, config?.auth?.authorizationHeader)
-    return new Flyte(createContext(resolved))
+    // Resolve the TLS-aware fetch first: discovery and token requests must
+    // trust the same certificates as the RPCs.
+    const tlsFetch = await createTlsFetch(resolved.tls)
+    await applyDiscoveredAuthHeader(resolved, config?.auth?.authorizationHeader, tlsFetch)
+    return new Flyte(createContext(resolved, { fetch: tlsFetch }))
+  }
+
+  /**
+   * Initializes the client from a flytectl/uctl-style YAML config file
+   * (e.g. `~/.flyte/config.yaml`). When `path` is omitted, the standard
+   * locations are searched. Node only. Overrides are merged on top of the
+   * file's values.
+   */
+  static async initFromConfig(path?: string, overrides?: FlyteConfig): Promise<Flyte> {
+    const resolvedPath = path ?? (await findConfigPath())
+    if (!resolvedPath) {
+      throw new FlyteConfigError(
+        'No config file found; searched ./config.yaml, ./.flyte/, the git root, ' +
+          '$UCTL_CONFIG, $FLYTECTL_CONFIG, ~/.union/, and ~/.flyte/.',
+      )
+    }
+    const fileConfig = await loadConfigFile(resolvedPath)
+    const fileAuth = { ...fileConfig.auth }
+    // The file always carries a mode (PKCE by default). Overrides that supply
+    // their own credentials must not be shadowed by it, so a CI process can
+    // pass an API key against a developer's interactive config.
+    if (!overrides?.auth?.mode && suppliesCredentials(overrides?.auth)) {
+      delete fileAuth.mode
+    }
+    return Flyte.init({
+      ...fileConfig,
+      ...overrides,
+      auth: { ...fileAuth, ...overrides?.auth },
+    })
+  }
+
+  /**
+   * Initializes the client from a platform API key (base64 of
+   * `endpoint:clientId:clientSecret:org`). When omitted, the
+   * `FLYTE_API_KEY` environment variable is used.
+   */
+  static async initFromApiKey(apiKey?: string): Promise<Flyte> {
+    const key = apiKey ?? process.env?.FLYTE_API_KEY
+    if (!key) {
+      throw new FlyteConfigError(
+        'No API key provided and FLYTE_API_KEY is not set.',
+      )
+    }
+    return Flyte.init({ auth: { apiKey: key } })
   }
 
   /** Direct access to the underlying generated Connect service clients. */
@@ -145,42 +233,55 @@ export class Flyte {
   }
 
   /**
-   * Triggers a run of an already-deployed task. `project` and `domain` are
-   * passed on the call itself.
+   * Fetches a deployed task: its identity plus the full registered spec
+   * (typed interface, default inputs). When no version is pinned, the latest
+   * deployed version is resolved. Pass the result to {@link run} to skip the
+   * lookup there.
+   */
+  async getTask(task: string | TaskRef, scope: RunScope = {}): Promise<TaskDetails> {
+    const ref: TaskRef = typeof task === 'string' ? { name: task } : task
+    // A project/domain on the ref itself wins over the call scope, which in
+    // turn wins over the client defaults.
+    return getTaskDetails(
+      this.ctx,
+      ref,
+      this.requireScope({
+        org: scope.org,
+        project: ref.project ?? scope.project,
+        domain: ref.domain ?? scope.domain,
+      }),
+    )
+  }
+
+  /**
+   * Triggers a run of an already-deployed task.
    *
    * ```ts
-   * await flyte.run({
-   *   task: 'my_task',
+   * const run = await flyte.run({
+   *   task: 'my_env.my_task',
    *   project: 'my-project',
    *   domain: 'development',
    *   inputs: { x: 1 },
+   *   envVars: { LOG_LEVEL: 'DEBUG' },
    * })
    * ```
    */
   async run(args: RunArgs): Promise<RunHandle> {
     const scope = this.requireScope(args)
-    const ref: TaskRef = typeof args.task === 'string' ? { name: args.task } : args.task
-    const version = ref.version ?? (await this.latestVersion({ ...scope, name: ref.name }))
 
-    const taskId = create(TaskIdentifierSchema, {
-      org: scope.org,
-      project: scope.project,
-      domain: scope.domain,
-      name: ref.name,
-      version,
-    })
+    const details =
+      args.task instanceof TaskDetails
+        ? args.task
+        : await this.getTask(args.task, scope)
 
-    // Fetch the task interface so inputs can be typed correctly.
-    const taskDetails = await this.ctx.services.task.getTaskDetails({ taskId })
-    const variables = taskDetails.details?.spec?.taskTemplate?.interface?.inputs
-
-    const { literals } = await this.ctx.services.translator.jsonValuesToLiterals(
-      create(JsonValuesToLiteralsRequestSchema, {
-        variables,
-        values: args.inputs ?? {},
-      }),
-    )
+    const shape = taskInputsShape(details.name, details.interface?.inputs, details.defaultInputs)
+    const literals = await prepareInputs(this.ctx, shape, args.inputs ?? {})
     const inputsMsg = create(InputsSchema, { literals })
+
+    const taskId = details.pb.taskId
+    if (!taskId) {
+      throw new FlyteError(`Task "${details.name}" has no identifier.`)
+    }
 
     const idField: CreateRunRequest['id'] = args.runName
       ? {
@@ -203,37 +304,58 @@ export class Flyte {
 
     const taskField: CreateRunRequest['task'] = { case: 'taskId', value: taskId }
 
+    // Offload inputs via the data proxy (the current SDK launch path).
+    // Older control planes without the data proxy get inline inputs instead.
     let inputWrapper: CreateRunRequest['inputWrapper']
     if (args.offload === false) {
       inputWrapper = { case: 'inputs', value: inputsMsg }
     } else {
-      const uploaded = await this.ctx.services.dataproxy.uploadInputs(
-        create(UploadInputsRequestSchema, {
-          id: idField,
-          task: taskField,
-          inputs: inputsMsg,
-        }),
-      )
-      if (!uploaded.offloadedInputData) {
-        throw new FlyteError('UploadInputs did not return offloaded input data.')
-      }
-      inputWrapper = {
-        case: 'offloadedInputData',
-        value: uploaded.offloadedInputData,
+      try {
+        const uploaded = await this.ctx.services.dataproxy.uploadInputs(
+          create(UploadInputsRequestSchema, {
+            id: idField,
+            task: taskField,
+            inputs: inputsMsg,
+            baseDir: args.runBaseDir ?? '',
+          }),
+        )
+        if (!uploaded.offloadedInputData) {
+          throw new FlyteError('UploadInputs did not return offloaded input data.')
+        }
+        inputWrapper = {
+          case: 'offloadedInputData',
+          value: uploaded.offloadedInputData,
+        }
+      } catch (err) {
+        if (!isConnectCode(err, Code.Unimplemented)) throw err
+        inputWrapper = { case: 'inputs', value: inputsMsg }
       }
     }
 
-    const res = await this.ctx.services.run.createRun(
-      create(CreateRunRequestSchema, {
-        id: idField,
-        task: taskField,
-        inputWrapper,
-        runSpec: args.runSpec,
-        source: RunSource.CLI,
-      }),
-    )
+    let res
+    try {
+      res = await this.ctx.services.run.createRun(
+        create(CreateRunRequestSchema, {
+          id: idField,
+          task: taskField,
+          inputWrapper,
+          runSpec: buildRunSpec(args, scope),
+          source: RUN_SOURCES[this.ctx.config.runSource],
+        }),
+      )
+    } catch (err) {
+      if (isConnectCode(err, Code.AlreadyExists)) {
+        throw new FlyteAlreadyExistsError(
+          args.runName
+            ? `A run named "${args.runName}" already exists in ${scope.project}/${scope.domain}.`
+            : `A run for task "${details.name}" already exists in ${scope.project}/${scope.domain}.`,
+          { cause: err },
+        )
+      }
+      throw err
+    }
 
-    const handle = this.handleFromRun(res.run)
+    const handle = this.handleFromRun(res.run, details)
     if (args.wait) {
       await handle.wait(args.waitOptions)
     }
@@ -241,24 +363,42 @@ export class Flyte {
   }
 
   /** Returns a handle for an existing run by name. */
-  async getRun(runName: string, scope: RunScope): Promise<RunHandle> {
+  async getRun(runName: string, scope: RunScope = {}): Promise<RunHandle> {
     const { org, project, domain } = this.requireScope(scope)
+    if (!runName) {
+      throw new FlyteError('Run name is required.')
+    }
     const runId = create(RunIdentifierSchema, {
       org,
       project,
       domain,
       name: runName,
     })
-    const res = await this.ctx.services.run.getRunDetails({ runId })
-    const actionId = res.details?.action?.id
-    if (!actionId) {
+    let res
+    try {
+      res = await this.ctx.services.run.getRunDetails({ runId })
+    } catch (err) {
+      if (isConnectCode(err, Code.NotFound)) {
+        throw new FlyteNotFoundError(
+          `Run "${runName}" not found in ${project}/${domain}.`,
+          { cause: err },
+        )
+      }
+      throw err
+    }
+    const action = res.details?.action
+    if (!action?.id) {
       throw new FlyteError(`Run ${runName} has no root action id.`)
     }
-    return new RunHandle(this.ctx, runId, actionId)
+    // The resolved task spec on the root action drives output conversion the
+    // same way the spec fetched by getTask does for freshly launched runs.
+    const iface =
+      action.spec.case === 'task' ? action.spec.value.taskTemplate?.interface : undefined
+    return new RunHandle(this.ctx, runId, action.id, iface, action)
   }
 
   /** Lists runs for a project. */
-  async listRuns(scope: RunScope, limit = 20): Promise<Run[]> {
+  async listRuns(scope: RunScope = {}, limit = 20): Promise<Run[]> {
     const { org, project, domain } = this.requireScope(scope)
     const res = await this.ctx.services.run.listRuns(
       create(ListRunsRequestSchema, {
@@ -276,52 +416,39 @@ export class Flyte {
     return res.runs
   }
 
-  private handleFromRun(run: Run | undefined): RunHandle {
+  private handleFromRun(run: Run | undefined, details: TaskDetails): RunHandle {
     const actionId = run?.action?.id
     if (!actionId?.run) {
       throw new FlyteError('CreateRun response did not include a run action id.')
     }
-    return new RunHandle(this.ctx, actionId.run, actionId)
+    const initialDetails = run?.action
+      ? create(ActionDetailsSchema, {
+          id: run.action.id,
+          metadata: run.action.metadata,
+          status: run.action.status,
+        })
+      : undefined
+    return new RunHandle(this.ctx, actionId.run, actionId, details.interface, initialDetails)
   }
 
-  private async latestVersion(ref: {
-    org: string
-    project: string
-    domain: string
-    name: string
-  }): Promise<string> {
-    const res = await this.ctx.services.task.listVersions({
-      taskName: create(TaskNameSchema, {
-        org: ref.org,
-        project: ref.project,
-        domain: ref.domain,
-        name: ref.name,
-      }),
-      request: { limit: 1 },
-    })
-    const version = res.versions[0]?.version
-    if (!version) {
-      throw new FlyteError(
-        `No deployed versions found for task "${ref.name}" in ${ref.project}/${ref.domain}.`,
-      )
-    }
-    return version
-  }
-
+  /**
+   * Resolves the org/project/domain for a call. Only project and domain are
+   * required: single-tenant deployments have no org, and a hostname with two
+   * or fewer labels yields none, so `org` is sent empty there.
+   */
   private requireScope(scope: RunScope): {
     org: string
     project: string
     domain: string
   } {
-    const org = scope.org ?? this.ctx.config.org
-    if (!org) {
+    const project = scope.project ?? this.ctx.config.project
+    const domain = scope.domain ?? this.ctx.config.domain
+    if (!project || !domain) {
       throw new FlyteConfigError(
-        'org is required. Provide it on the call or via the API key / Flyte.init({ org }).',
+        'project and domain are required. Provide them on the call or as defaults ' +
+          'via Flyte.init({ project, domain }).',
       )
     }
-    if (!scope.project || !scope.domain) {
-      throw new FlyteConfigError('project and domain are required on the call.')
-    }
-    return { org, project: scope.project, domain: scope.domain }
+    return { org: scope.org ?? this.ctx.config.org ?? '', project, domain }
   }
 }

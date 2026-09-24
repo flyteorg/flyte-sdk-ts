@@ -5,12 +5,18 @@
 import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv1";
 import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv1";
 import { file_buf_validate_validate } from "../../buf/validate/validate_pb";
+import type { RunIdentifier } from "../common/identifier_pb";
+import { file_flyteidl2_common_identifier } from "../common/identifier_pb";
 import type { ActionPhase } from "../common/phase_pb";
 import { file_flyteidl2_common_phase } from "../common/phase_pb";
+import type { Relation } from "../common/run_pb";
+import { file_flyteidl2_common_run } from "../common/run_pb";
 import type { KeyValuePair } from "../core/literals_pb";
 import { file_flyteidl2_core_literals } from "../core/literals_pb";
 import type { SecurityContext } from "../core/security_pb";
 import { file_flyteidl2_core_security } from "../core/security_pb";
+import type { Resources_ResourceEntry } from "../core/tasks_pb";
+import { file_flyteidl2_core_tasks } from "../core/tasks_pb";
 import type { DeliveryConfigTemplate } from "../notification/definition_pb";
 import { file_flyteidl2_notification_definition } from "../notification/definition_pb";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -21,7 +27,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file flyteidl2/task/run.proto.
  */
 export const file_flyteidl2_task_run: GenFile = /*@__PURE__*/
-  fileDesc("ChhmbHl0ZWlkbDIvdGFzay9ydW4ucHJvdG8SDmZseXRlaWRsMi50YXNrImsKBkxhYmVscxIyCgZ2YWx1ZXMYASADKAsyIi5mbHl0ZWlkbDIudGFzay5MYWJlbHMuVmFsdWVzRW50cnkaLQoLVmFsdWVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJ1CgtBbm5vdGF0aW9ucxI3CgZ2YWx1ZXMYASADKAsyJy5mbHl0ZWlkbDIudGFzay5Bbm5vdGF0aW9ucy5WYWx1ZXNFbnRyeRotCgtWYWx1ZXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIjQKBEVudnMSLAoGdmFsdWVzGAEgAygLMhwuZmx5dGVpZGwyLmNvcmUuS2V5VmFsdWVQYWlyIikKDlJhd0RhdGFTdG9yYWdlEhcKD3Jhd19kYXRhX3ByZWZpeBgBIAEoCSJkCgtDYWNoZUNvbmZpZxIXCg9vdmVyd3JpdGVfY2FjaGUYASABKAgSPAoSY2FjaGVfbG9va3VwX3Njb3BlGAIgASgOMiAuZmx5dGVpZGwyLnRhc2suQ2FjaGVMb29rdXBTY29wZSLzBAoHUnVuU3BlYxImCgZsYWJlbHMYASABKAsyFi5mbHl0ZWlkbDIudGFzay5MYWJlbHMSMAoLYW5ub3RhdGlvbnMYAiABKAsyGy5mbHl0ZWlkbDIudGFzay5Bbm5vdGF0aW9ucxIiCgRlbnZzGAMgASgLMhQuZmx5dGVpZGwyLnRhc2suRW52cxIxCg1pbnRlcnJ1cHRpYmxlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLkJvb2xWYWx1ZRIbCg9vdmVyd3JpdGVfY2FjaGUYBSABKAhCAhgBEg8KB2NsdXN0ZXIYBiABKAkSOAoQcmF3X2RhdGFfc3RvcmFnZRgHIAEoCzIeLmZseXRlaWRsMi50YXNrLlJhd0RhdGFTdG9yYWdlEjkKEHNlY3VyaXR5X2NvbnRleHQYCCABKAsyHy5mbHl0ZWlkbDIuY29yZS5TZWN1cml0eUNvbnRleHQSMQoMY2FjaGVfY29uZmlnGAkgASgLMhsuZmx5dGVpZGwyLnRhc2suQ2FjaGVDb25maWcSIAoWbm90aWZpY2F0aW9uX3J1bGVfbmFtZRgKIAEoCUgAEjwKEm5vdGlmaWNhdGlvbl9ydWxlcxgLIAEoCzIeLmZseXRlaWRsMi50YXNrLklubGluZVJ1bGVMaXN0SAASMgoOcnVuX3N0YXJ0X3RpbWUYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEh4KFm1heF9hY3Rpb25fY29uY3VycmVuY3kYDSABKA0SFAoMcnVuX2Jhc2VfZGlyGA4gASgJQhcKFW5vdGlmaWNhdGlvbl9zZXR0aW5ncyJFCg5JbmxpbmVSdWxlTGlzdBIzCgVydWxlcxgBIAMoCzIaLmZseXRlaWRsMi50YXNrLklubGluZVJ1bGVCCLpIBZIBAggBItcBCgpJbmxpbmVSdWxlEkkKCW9uX3BoYXNlcxgBIAMoDjIdLmZseXRlaWRsMi5jb21tb24uQWN0aW9uUGhhc2VCF7pIFJIBEQgBGAEiC4IBCBgFGAYYBxgIEh4KFGRlbGl2ZXJ5X2NvbmZpZ19uYW1lGAIgASgJSAASSwoRZGVsaXZlcnlfdGVtcGxhdGUYAyABKAsyLi5mbHl0ZWlkbDIubm90aWZpY2F0aW9uLkRlbGl2ZXJ5Q29uZmlnVGVtcGxhdGVIAEIRCghkZWxpdmVyeRIFukgCCAEqfAoQQ2FjaGVMb29rdXBTY29wZRIiCh5DQUNIRV9MT09LVVBfU0NPUEVfVU5TUEVDSUZJRUQQABIdChlDQUNIRV9MT09LVVBfU0NPUEVfR0xPQkFMEAESJQohQ0FDSEVfTE9PS1VQX1NDT1BFX1BST0pFQ1RfRE9NQUlOEAJCrQEKEmNvbS5mbHl0ZWlkbDIudGFza0IIUnVuUHJvdG9IAlABWjJnaXRodWIuY29tL2ZseXRlb3JnL2ZseXRlL3YyL2dlbi9nby9mbHl0ZWlkbDIvdGFza6ICA0ZUWKoCDkZseXRlaWRsMi5UYXNrygIORmx5dGVpZGwyXFRhc2viAhpGbHl0ZWlkbDJcVGFza1xHUEJNZXRhZGF0YeoCD0ZseXRlaWRsMjo6VGFza2IGcHJvdG8z", [file_buf_validate_validate, file_flyteidl2_common_phase, file_flyteidl2_core_literals, file_flyteidl2_core_security, file_flyteidl2_notification_definition, file_google_protobuf_timestamp, file_google_protobuf_wrappers]);
+  fileDesc("ChhmbHl0ZWlkbDIvdGFzay9ydW4ucHJvdG8SDmZseXRlaWRsMi50YXNrImsKBkxhYmVscxIyCgZ2YWx1ZXMYASADKAsyIi5mbHl0ZWlkbDIudGFzay5MYWJlbHMuVmFsdWVzRW50cnkaLQoLVmFsdWVzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJ1CgtBbm5vdGF0aW9ucxI3CgZ2YWx1ZXMYASADKAsyJy5mbHl0ZWlkbDIudGFzay5Bbm5vdGF0aW9ucy5WYWx1ZXNFbnRyeRotCgtWYWx1ZXNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIjQKBEVudnMSLAoGdmFsdWVzGAEgAygLMhwuZmx5dGVpZGwyLmNvcmUuS2V5VmFsdWVQYWlyIikKDlJhd0RhdGFTdG9yYWdlEhcKD3Jhd19kYXRhX3ByZWZpeBgBIAEoCSJkCgtDYWNoZUNvbmZpZxIXCg9vdmVyd3JpdGVfY2FjaGUYASABKAgSPAoSY2FjaGVfbG9va3VwX3Njb3BlGAIgASgOMiAuZmx5dGVpZGwyLnRhc2suQ2FjaGVMb29rdXBTY29wZSI0CgdSZWNvdmVyEikKE2ZvcmNlX3JlcnVuX2FjdGlvbnMYASADKAlCDLpICZIBBiIEcgIQASKWBwoHUnVuU3BlYxImCgZsYWJlbHMYASABKAsyFi5mbHl0ZWlkbDIudGFzay5MYWJlbHMSMAoLYW5ub3RhdGlvbnMYAiABKAsyGy5mbHl0ZWlkbDIudGFzay5Bbm5vdGF0aW9ucxIiCgRlbnZzGAMgASgLMhQuZmx5dGVpZGwyLnRhc2suRW52cxIxCg1pbnRlcnJ1cHRpYmxlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLkJvb2xWYWx1ZRIbCg9vdmVyd3JpdGVfY2FjaGUYBSABKAhCAhgBEg0KBXF1ZXVlGAYgASgJEjgKEHJhd19kYXRhX3N0b3JhZ2UYByABKAsyHi5mbHl0ZWlkbDIudGFzay5SYXdEYXRhU3RvcmFnZRI5ChBzZWN1cml0eV9jb250ZXh0GAggASgLMh8uZmx5dGVpZGwyLmNvcmUuU2VjdXJpdHlDb250ZXh0EjEKDGNhY2hlX2NvbmZpZxgJIAEoCzIbLmZseXRlaWRsMi50YXNrLkNhY2hlQ29uZmlnEiAKFm5vdGlmaWNhdGlvbl9ydWxlX25hbWUYCiABKAlIABI8ChJub3RpZmljYXRpb25fcnVsZXMYCyABKAsyHi5mbHl0ZWlkbDIudGFzay5JbmxpbmVSdWxlTGlzdEgAEjIKDnJ1bl9zdGFydF90aW1lGAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIeChZtYXhfYWN0aW9uX2NvbmN1cnJlbmN5GA0gASgNEhQKDHJ1bl9iYXNlX2RpchgOIAEoCRI3CgpyZWxhdGVkX3RvGA8gASgLMh8uZmx5dGVpZGwyLmNvbW1vbi5SdW5JZGVudGlmaWVyQgIYARIUCgxjbHVzdGVyX3Bvb2wYECABKAkSOAoQdGFza19zcGVjX3NvdXJjZRgRIAEoDjIeLmZseXRlaWRsMi50YXNrLlRhc2tTcGVjU291cmNlEiwKCHJlbGF0aW9uGBIgASgLMhouZmx5dGVpZGwyLmNvbW1vbi5SZWxhdGlvbhIoCgdyZWNvdmVyGBMgASgLMhcuZmx5dGVpZGwyLnRhc2suUmVjb3ZlchI5ChBkZWZhdWx0X3NldHRpbmdzGBQgASgLMh8uZmx5dGVpZGwyLnRhc2suRGVmYXVsdFNldHRpbmdzQhcKFW5vdGlmaWNhdGlvbl9zZXR0aW5nc1IHY2x1c3RlciJyCg9EZWZhdWx0U2V0dGluZ3MSGQoRcG9kX3RlbXBsYXRlX25hbWUYASABKAkSRAoWdGFza19yZXNvdXJjZV9kZWZhdWx0cxgCIAEoCzIkLmZseXRlaWRsMi50YXNrLlRhc2tSZXNvdXJjZURlZmF1bHRzIocBChRUYXNrUmVzb3VyY2VEZWZhdWx0cxI5CghyZXF1ZXN0cxgBIAMoCzInLmZseXRlaWRsMi5jb3JlLlJlc291cmNlcy5SZXNvdXJjZUVudHJ5EjQKA21heBgCIAMoCzInLmZseXRlaWRsMi5jb3JlLlJlc291cmNlcy5SZXNvdXJjZUVudHJ5IkUKDklubGluZVJ1bGVMaXN0EjMKBXJ1bGVzGAEgAygLMhouZmx5dGVpZGwyLnRhc2suSW5saW5lUnVsZUIIukgFkgECCAEirQMKCklubGluZVJ1bGUSSwoJb25fcGhhc2VzGAEgAygOMh0uZmx5dGVpZGwyLmNvbW1vbi5BY3Rpb25QaGFzZUIZukgWkgETCAEYASINggEKGAUYBhgHGAgYCRIeChRkZWxpdmVyeV9jb25maWdfbmFtZRgCIAEoCUgAEksKEWRlbGl2ZXJ5X3RlbXBsYXRlGAMgASgLMi4uZmx5dGVpZGwyLm5vdGlmaWNhdGlvbi5EZWxpdmVyeUNvbmZpZ1RlbXBsYXRlSAA60QG6SM0BGsoBChVwYXVzZWRfcnVsZV9leGNsdXNpdmUSTGEgcnVsZSBzdWJzY3JpYmluZyB0byBBQ1RJT05fUEhBU0VfUEFVU0VEIG11c3Qgbm90IHN1YnNjcmliZSB0byBvdGhlciBwaGFzZXMaYyEoZmx5dGVpZGwyLmNvbW1vbi5BY3Rpb25QaGFzZS5BQ1RJT05fUEhBU0VfUEFVU0VEIGluIHRoaXMub25fcGhhc2VzKSB8fCB0aGlzLm9uX3BoYXNlcy5zaXplKCkgPT0gMUIRCghkZWxpdmVyeRIFukgCCAEqfAoQQ2FjaGVMb29rdXBTY29wZRIiCh5DQUNIRV9MT09LVVBfU0NPUEVfVU5TUEVDSUZJRUQQABIdChlDQUNIRV9MT09LVVBfU0NPUEVfR0xPQkFMEAESJQohQ0FDSEVfTE9PS1VQX1NDT1BFX1BST0pFQ1RfRE9NQUlOEAIqcQoOVGFza1NwZWNTb3VyY2USIAocVEFTS19TUEVDX1NPVVJDRV9VTlNQRUNJRklFRBAAEh0KGVRBU0tfU1BFQ19TT1VSQ0VfREVQTE9ZRUQQARIeChpUQVNLX1NQRUNfU09VUkNFX0VQSEVNRVJBTBACQq0BChJjb20uZmx5dGVpZGwyLnRhc2tCCFJ1blByb3RvSAJQAVoyZ2l0aHViLmNvbS9mbHl0ZW9yZy9mbHl0ZS92Mi9nZW4vZ28vZmx5dGVpZGwyL3Rhc2uiAgNGVFiqAg5GbHl0ZWlkbDIuVGFza8oCDkZseXRlaWRsMlxUYXNr4gIaRmx5dGVpZGwyXFRhc2tcR1BCTWV0YWRhdGHqAg9GbHl0ZWlkbDI6OlRhc2tiBnByb3RvMw", [file_buf_validate_validate, file_flyteidl2_common_identifier, file_flyteidl2_common_phase, file_flyteidl2_common_run, file_flyteidl2_core_literals, file_flyteidl2_core_security, file_flyteidl2_core_tasks, file_flyteidl2_notification_definition, file_google_protobuf_timestamp, file_google_protobuf_wrappers]);
 
 /**
  * Label values to be applied to an execution resource.
@@ -142,6 +148,36 @@ export const CacheConfigSchema: GenMessage<CacheConfig> = /*@__PURE__*/
   messageDesc(file_flyteidl2_task_run, 4);
 
 /**
+ * Recover carries the optional configuration of a recovery run — a run created
+ * with RunSpec.relation.relation_type = RELATION_TYPE_RECOVER. The run being
+ * recovered is RunSpec.relation.related_to; this message intentionally carries no
+ * run reference of its own. It is the extension point for future recovery
+ * parameters.
+ *
+ * @generated from message flyteidl2.task.Recover
+ */
+export type Recover = Message<"flyteidl2.task.Recover"> & {
+  /**
+   * Escape hatch: names of actions that must always re-execute in this recovery
+   * run, even if they succeeded in the run being recovered. A listed parent
+   * action re-executes and therefore re-enqueues its children, each of which goes
+   * through the recovery decision individually (list them too to force the whole
+   * subtree). A listed condition action re-pauses and waits for a new signal.
+   * Unknown names are ignored.
+   *
+   * @generated from field: repeated string force_rerun_actions = 1;
+   */
+  forceRerunActions: string[];
+};
+
+/**
+ * Describes the message flyteidl2.task.Recover.
+ * Use `create(RecoverSchema)` to create a new message.
+ */
+export const RecoverSchema: GenMessage<Recover> = /*@__PURE__*/
+  messageDesc(file_flyteidl2_task_run, 5);
+
+/**
  * @generated from message flyteidl2.task.RunSpec
  */
 export type RunSpec = Message<"flyteidl2.task.RunSpec"> & {
@@ -183,12 +219,13 @@ export type RunSpec = Message<"flyteidl2.task.RunSpec"> & {
   overwriteCache: boolean;
 
   /**
-   * the specific cluster that this action should be executed on. this value will be used as the
-   * default for all actions in the run unless overridden.
+   * The queue name that this run should be executed on.
+   * This value will be used as the default for all actions in the run unless overridden in TaskAction.queue.
+   * Queue name is unique within an org so it can be used as an id to reference the queue.
    *
-   * @generated from field: string cluster = 6;
+   * @generated from field: string queue = 6;
    */
-  cluster: string;
+  queue: string;
 
   /**
    * Encapsulates user settings pertaining to offloaded data (i.e. Blobs, Schema, query data, etc.).
@@ -266,6 +303,58 @@ export type RunSpec = Message<"flyteidl2.task.RunSpec"> & {
    * @generated from field: string run_base_dir = 14;
    */
   runBaseDir: string;
+
+  /**
+   * Deprecated: use relation instead. Optional pointer to the single parent run this run
+   * was derived from. If set and relation is unset, the server normalizes it into relation
+   * with RELATION_TYPE_RERUN.
+   *
+   * @generated from field: flyteidl2.common.RunIdentifier related_to = 15 [deprecated = true];
+   * @deprecated
+   */
+  relatedTo?: RunIdentifier;
+
+  /**
+   * Pool of the assigned queue for given run.
+   * Always set by server. Should not be specified by user.
+   *
+   * @generated from field: string cluster_pool = 16;
+   */
+  clusterPool: string;
+
+  /**
+   * How the task spec was provided at creation (deployed TaskId vs inline spec).
+   * Set by server; lets the rerun UI choose TaskId over the full inline spec.
+   *
+   * @generated from field: flyteidl2.task.TaskSpecSource task_spec_source = 17;
+   */
+  taskSpecSource: TaskSpecSource;
+
+  /**
+   * Optional provenance link to the single parent run this run was derived from
+   * (re-run or recover). Set at creation, immutable thereafter, and scoped to the
+   * same org/project/domain as this run. Replaces related_to.
+   *
+   * @generated from field: flyteidl2.common.Relation relation = 18;
+   */
+  relation?: Relation;
+
+  /**
+   * Optional recovery configuration. Only meaningful when relation is set with
+   * RELATION_TYPE_RECOVER: the run recovers relation.related_to — its successful
+   * actions are reused and only failed/changed ones re-execute. See Recover.
+   *
+   * @generated from field: flyteidl2.task.Recover recover = 19;
+   */
+  recover?: Recover;
+
+  /**
+   * Run-scoped defaults, projected onto every task in the run that does not
+   * set the corresponding value itself. Set by the server from settings.
+   *
+   * @generated from field: flyteidl2.task.DefaultSettings default_settings = 20;
+   */
+  defaultSettings?: DefaultSettings;
 };
 
 /**
@@ -273,7 +362,68 @@ export type RunSpec = Message<"flyteidl2.task.RunSpec"> & {
  * Use `create(RunSpecSchema)` to create a new message.
  */
 export const RunSpecSchema: GenMessage<RunSpec> = /*@__PURE__*/
-  messageDesc(file_flyteidl2_task_run, 5);
+  messageDesc(file_flyteidl2_task_run, 6);
+
+/**
+ * DefaultSettings holds run-scoped defaults applied to tasks in a run. Each field
+ * only fills in a value the task leaves unset; a task's own choice always wins.
+ *
+ * @generated from message flyteidl2.task.DefaultSettings
+ */
+export type DefaultSettings = Message<"flyteidl2.task.DefaultSettings"> & {
+  /**
+   * Pod template name, projected onto tasks that do not name one themselves.
+   * A task's own TaskMetadata.pod_template_name always wins.
+   *
+   * @generated from field: string pod_template_name = 1;
+   */
+  podTemplateName: string;
+
+  /**
+   * Resource defaults for every action in this run. Resolved by the server at creation from the org, project and
+   * domain task_resource settings; a caller-supplied value is currently overwritten.
+   *
+   * @generated from field: flyteidl2.task.TaskResourceDefaults task_resource_defaults = 2;
+   */
+  taskResourceDefaults?: TaskResourceDefaults;
+};
+
+/**
+ * Describes the message flyteidl2.task.DefaultSettings.
+ * Use `create(DefaultSettingsSchema)` to create a new message.
+ */
+export const DefaultSettingsSchema: GenMessage<DefaultSettings> = /*@__PURE__*/
+  messageDesc(file_flyteidl2_task_run, 7);
+
+/**
+ * Resolved task_resource settings for a run: what a task pod gets when its template is silent, and the ceiling
+ * either way. Deliberately not a flyteidl2.core.Resources: max is a ceiling on both a task's requests and its
+ * limits, not a Kubernetes limit.
+ *
+ * @generated from message flyteidl2.task.TaskResourceDefaults
+ */
+export type TaskResourceDefaults = Message<"flyteidl2.task.TaskResourceDefaults"> & {
+  /**
+   * Request for each dimension a task template leaves unset (task_resource.min, capped at max).
+   *
+   * @generated from field: repeated flyteidl2.core.Resources.ResourceEntry requests = 1;
+   */
+  requests: Resources_ResourceEntry[];
+
+  /**
+   * Per-dimension cap on a task's requests and limits (task_resource.max).
+   *
+   * @generated from field: repeated flyteidl2.core.Resources.ResourceEntry max = 2;
+   */
+  max: Resources_ResourceEntry[];
+};
+
+/**
+ * Describes the message flyteidl2.task.TaskResourceDefaults.
+ * Use `create(TaskResourceDefaultsSchema)` to create a new message.
+ */
+export const TaskResourceDefaultsSchema: GenMessage<TaskResourceDefaults> = /*@__PURE__*/
+  messageDesc(file_flyteidl2_task_run, 8);
 
 /**
  * @generated from message flyteidl2.task.InlineRuleList
@@ -290,7 +440,7 @@ export type InlineRuleList = Message<"flyteidl2.task.InlineRuleList"> & {
  * Use `create(InlineRuleListSchema)` to create a new message.
  */
 export const InlineRuleListSchema: GenMessage<InlineRuleList> = /*@__PURE__*/
-  messageDesc(file_flyteidl2_task_run, 6);
+  messageDesc(file_flyteidl2_task_run, 9);
 
 /**
  * @generated from message flyteidl2.task.InlineRule
@@ -315,6 +465,7 @@ export type InlineRule = Message<"flyteidl2.task.InlineRule"> & {
   } | {
     /**
      * template can only have fields defined in flyteidl2.notification.RunCompletedNotificationTemplateData
+     * (terminal-phase rules) or flyteidl2.notification.ActionPausedNotificationTemplateData (PAUSED rules)
      *
      * @generated from field: flyteidl2.notification.DeliveryConfigTemplate delivery_template = 3;
      */
@@ -328,7 +479,7 @@ export type InlineRule = Message<"flyteidl2.task.InlineRule"> & {
  * Use `create(InlineRuleSchema)` to create a new message.
  */
 export const InlineRuleSchema: GenMessage<InlineRule> = /*@__PURE__*/
-  messageDesc(file_flyteidl2_task_run, 7);
+  messageDesc(file_flyteidl2_task_run, 10);
 
 /**
  * @generated from enum flyteidl2.task.CacheLookupScope
@@ -366,4 +517,38 @@ export enum CacheLookupScope {
  */
 export const CacheLookupScopeSchema: GenEnum<CacheLookupScope> = /*@__PURE__*/
   enumDesc(file_flyteidl2_task_run, 0);
+
+/**
+ * TaskSpecSource records how a run's task spec was provided at creation time, so
+ * the rerun UI can send a TaskId (deployed) rather than the full inline spec.
+ *
+ * @generated from enum flyteidl2.task.TaskSpecSource
+ */
+export enum TaskSpecSource {
+  /**
+   * @generated from enum value: TASK_SPEC_SOURCE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The run referenced a deployed (registered) task by TaskId.
+   *
+   * @generated from enum value: TASK_SPEC_SOURCE_DEPLOYED = 1;
+   */
+  DEPLOYED = 1,
+
+  /**
+   * The run carried an inline task spec (e.g. fast registration) that does not
+   * exist in the task store.
+   *
+   * @generated from enum value: TASK_SPEC_SOURCE_EPHEMERAL = 2;
+   */
+  EPHEMERAL = 2,
+}
+
+/**
+ * Describes the enum flyteidl2.task.TaskSpecSource.
+ */
+export const TaskSpecSourceSchema: GenEnum<TaskSpecSource> = /*@__PURE__*/
+  enumDesc(file_flyteidl2_task_run, 1);
 
