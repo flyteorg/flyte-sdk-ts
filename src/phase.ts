@@ -18,6 +18,7 @@ const TERMINAL_PHASES: ReadonlySet<ActionPhase> = new Set([
   ActionPhase.FAILED,
   ActionPhase.ABORTED,
   ActionPhase.TIMED_OUT,
+  ActionPhase.RECOVERED,
 ])
 
 /** True once the action can no longer change phase. */
@@ -25,7 +26,10 @@ export function isTerminal(phase: ActionPhase): boolean {
   return TERMINAL_PHASES.has(phase)
 }
 
-/** True if the action finished successfully. */
+/**
+ * True if the action finished successfully. RECOVERED counts: it marks an
+ * action whose result was reused from a source run without re-executing.
+ */
 export function isSuccess(phase: ActionPhase): boolean {
-  return phase === ActionPhase.SUCCEEDED
+  return phase === ActionPhase.SUCCEEDED || phase === ActionPhase.RECOVERED
 }

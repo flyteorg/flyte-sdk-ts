@@ -9,6 +9,8 @@ Do not commit `.env` or put API keys in browser code.
 |------|---------------|---------|---------|
 | **client_credentials** | Node, CI, server | [`run-noop.ts`](run-noop.ts) — minimal run + wait | `pnpm example:run` |
 | **client_credentials** | Node, CI, server | [`quickstart.ts`](quickstart.ts) — run, wait, outputs | `pnpm example:quickstart` |
+| **from config file** (PKCE by default) | Node / dev machine | [`config-file.ts`](config-file.ts) — init from `~/.flyte/config.yaml`, inspect the task, stream progress, list actions | `pnpm example:config` |
+| **from config file** | Node / dev machine | [`approve-condition.ts`](approve-condition.ts) — signal a paused condition (human-in-the-loop) | `pnpm example:approve` |
 | **client_credentials** | Node | [`scan-tasks.ts`](scan-tasks.ts) — list tasks + launch forms | `pnpm example:scan-tasks` |
 | **client_credentials + bearer + discovery** | Node | [`auth-test.ts`](auth-test.ts) — smoke test all Node paths | `pnpm example:auth` |
 | **session** | Next.js / React | [`browser-session.tsx`](browser-session.tsx) — copy-paste snippet | — |

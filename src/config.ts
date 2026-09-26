@@ -6,10 +6,13 @@
  * Configuration resolution for the Flyte client.
  *
  * Supports machine auth (API key / client credentials), browser session cookies,
- * static or dynamic bearer tokens, and anonymous local development.
+ * static or dynamic bearer tokens, interactive OAuth flows for Node (PKCE,
+ * device flow, external token command), and anonymous local development.
  */
 
 import { FlyteConfigError } from './errors'
+import type { RetryOptions } from './interceptors'
+import type { TokenCache } from './oauth'
 
 /** How the client authenticates the client-credentials token request. */
 export type ClientAuthMethod = 'basic' | 'post'
@@ -19,14 +22,34 @@ export type AuthMode =
   | 'client_credentials'
   | 'session'
   | 'bearer'
+  | 'pkce'
+  | 'device_flow'
+  | 'external_command'
   | 'anonymous'
+
+/** Details shown to the user during the device-flow login. */
+export interface DeviceAuthorizationInfo {
+  /** Code the user must confirm on the verification page. */
+  userCode: string
+  /** URL the user must open to complete the login. */
+  verificationUri: string
+  /** Verification URL with the user code embedded, when provided. */
+  verificationUriComplete?: string
+}
 
 export interface AuthOptions {
   /**
    * Authentication mode. When omitted, inferred from the other auth fields:
    * API key / client id+secret → `client_credentials`; `bearerToken` /
-   * `getAccessToken` → `bearer`; `session: true` or explicit `mode: 'session'`
-   * → `session`; otherwise `anonymous`.
+   * `getAccessToken` → `bearer`; `command` → `external_command`;
+   * `session: true` → `session`; otherwise `anonymous`.
+   *
+   * The interactive `pkce` and `device_flow` modes are never inferred — they
+   * open a browser or print a code, which must not happen by surprise in a
+   * server or browser bundle. Ask for them explicitly. `Flyte.initFromConfig`
+   * does default to `pkce`, because a flytectl-style config file implies an
+   * interactive context; this is the one place the default differs, and it
+   * matches the Go and Python SDKs.
    */
   mode?: AuthMode
   /** Shorthand for `{ mode: 'session' }` — use in browser / Next.js client components. */
@@ -37,6 +60,10 @@ export interface AuthOptions {
   apiKey?: string
   clientId?: string
   clientSecret?: string
+  /** Name of an environment variable holding the client secret. */
+  clientSecretEnvVar?: string
+  /** Path of a file holding the client secret (read lazily; Node only). */
+  clientSecretLocation?: string
   tokenEndpoint?: string
   scopes?: string[]
   audience?: string
@@ -47,6 +74,45 @@ export interface AuthOptions {
   bearerToken?: string
   /** Returns a fresh access token per request (or on cache miss). */
   getAccessToken?: () => Promise<string>
+
+  // --- pkce / device_flow (interactive login, Node) ---
+  /**
+   * Give up on the browser login after this long. Default 10 minutes —
+   * generous, since users may need to type credentials and pass MFA.
+   */
+  browserTimeoutMs?: number
+  /** Give up on the device-flow login after this long. Default 10 minutes. */
+  deviceFlowTimeoutMs?: number
+  /** Device-flow polling interval. Default 5 seconds. */
+  devicePollIntervalMs?: number
+  /**
+   * Called with the code and verification URL during device-flow login.
+   * Defaults to printing them to the console.
+   */
+  onDeviceAuthorization?: (info: DeviceAuthorizationInfo) => void
+  /**
+   * Disable the on-disk token cache used by interactive logins (PKCE,
+   * device flow), forcing a fresh login per process.
+   */
+  disableTokenCache?: boolean
+  /**
+   * Where interactive logins persist their tokens. Defaults to a file cache
+   * under `~/.flyte`; supply your own to share a store with another process
+   * or to keep tokens in a secret manager. Ignored when
+   * {@link disableTokenCache} is set.
+   */
+  tokenCache?: TokenCache
+
+  // --- external_command (token minted by another program) ---
+  /** Command (argv) that prints a bearer access token to stdout. */
+  command?: string[]
+
+  /**
+   * Command (argv) that prints a token for an authenticating proxy in front
+   * of the control plane. Sent as `proxy-authorization` on every request.
+   * Independent of {@link mode}; Node only.
+   */
+  proxyCommand?: string[]
 
   // --- session (browser / logged-in user, Flyte console model) ---
   /**
@@ -83,20 +149,56 @@ export interface FlyteConfig {
    */
   endpoint?: string
   /**
-   * Default org for requests. Usually derived from the API key; can still be
-   * overridden per call. Project and domain are always passed per call.
+   * Default org for requests. Derived from the API key or, failing that, the
+   * endpoint hostname's first DNS label (`acme` for `acme.example.com`) —
+   * matching the Go and Python SDKs. Can still be overridden per call.
    */
   org?: string
+  /** Default project for runs and task lookups. Can be overridden per call. */
+  project?: string
+  /** Default domain for runs and task lookups. Can be overridden per call. */
+  domain?: string
+  /** Use plain HTTP (local development). */
+  insecure?: boolean
+  /**
+   * Skip server certificate verification. Node only, and unsafe — prefer
+   * {@link caCertFilePath} for private CAs.
+   */
+  insecureSkipVerify?: boolean
+  /**
+   * Path to a PEM CA bundle used to verify the server, for clusters behind a
+   * private or enterprise CA. Node only.
+   */
+  caCertFilePath?: string
   auth?: AuthOptions
   headers?: Record<string, string>
+  /**
+   * Retry policy for unary RPCs that fail with `Unavailable`. Defaults to 4
+   * retries with linear backoff; pass `{ maxRetries: 0 }` to disable.
+   */
+  retry?: RetryOptions
+  /**
+   * How runs launched by this client are attributed in the console. Defaults
+   * to `'web'` — this SDK is normally embedded in a service or web app. Use
+   * `'cli'` when building a command-line tool.
+   */
+  runSource?: RunSourceName
 }
+
+/** How a run was launched, as recorded on the run. */
+export type RunSourceName = 'web' | 'cli' | 'unspecified'
 
 interface ClientCredentialsAuth {
   mode: 'client_credentials'
   clientId: string
-  clientSecret: string
+  clientSecret?: string
+  /** Path of a file holding the client secret, read lazily at token time. */
+  clientSecretLocation?: string
   tokenEndpoint?: string
+  /** Scopes to request; the fallback default when none were configured. */
   scopes: string[]
+  /** True when the caller pinned the scopes, so discovery must not override. */
+  scopesExplicit: boolean
   audience?: string
   authorizationHeader: string
   clientAuthMethod: ClientAuthMethod
@@ -123,6 +225,34 @@ interface DynamicBearerAuth {
   authorizationHeader: string
 }
 
+interface PkceAuth {
+  mode: 'pkce'
+  browserTimeoutMs: number
+  scopes?: string[]
+  audience?: string
+  disableTokenCache: boolean
+  tokenCache?: TokenCache
+  authorizationHeader: string
+}
+
+interface DeviceFlowAuth {
+  mode: 'device_flow'
+  timeoutMs: number
+  pollIntervalMs: number
+  scopes?: string[]
+  audience?: string
+  onDeviceAuthorization?: (info: DeviceAuthorizationInfo) => void
+  disableTokenCache: boolean
+  tokenCache?: TokenCache
+  authorizationHeader: string
+}
+
+interface ExternalCommandAuth {
+  mode: 'external_command'
+  command: string[]
+  authorizationHeader: string
+}
+
 interface AnonymousAuth {
   mode: 'anonymous'
   authorizationHeader: string
@@ -133,13 +263,29 @@ export type ResolvedAuth =
   | SessionAuth
   | BearerAuth
   | DynamicBearerAuth
+  | PkceAuth
+  | DeviceFlowAuth
+  | ExternalCommandAuth
   | AnonymousAuth
 
 export interface ResolvedConfig {
   endpoint: string
   org?: string
+  project?: string
+  domain?: string
   headers: Record<string, string>
   auth: ResolvedAuth
+  retry?: RetryOptions
+  tls?: TlsOptions
+  /** Command that mints `proxy-authorization` tokens, when configured. */
+  proxyCommand?: string[]
+  runSource: RunSourceName
+}
+
+/** Server-certificate trust settings. Node only. */
+export interface TlsOptions {
+  insecureSkipVerify?: boolean
+  caCertFilePath?: string
 }
 
 interface DecodedApiKey {
@@ -178,14 +324,36 @@ export function decodeApiKey(apiKey: string): DecodedApiKey {
   return { endpoint, clientId, clientSecret, org }
 }
 
-export function normalizeEndpoint(endpoint: string): string {
+export function normalizeEndpoint(endpoint: string, insecure = false): string {
   let e = endpoint.trim()
   e = e.replace(/^dns:\/\/\//, '')
-  if (!/^https?:\/\//.test(e)) {
+  if (insecure) {
+    e = e.replace(/^https?:\/\//, '')
+    e = `http://${e}`
+  } else if (!/^https?:\/\//.test(e)) {
     const isLocal = /^(localhost|127\.0\.0\.1)(:|$)/.test(e)
     e = `${isLocal ? 'http' : 'https'}://${e}`
   }
   return e.replace(/\/+$/, '')
+}
+
+/**
+ * Derives the org from the endpoint hostname's first DNS label, matching the
+ * Go and Python SDKs: `acme.example.com` → `acme`. Hostnames with two or
+ * fewer labels — and IP literals, whose octets are not DNS labels — yield
+ * `undefined`.
+ */
+export function orgFromEndpoint(endpoint: string): string | undefined {
+  let host = endpoint.trim().replace(/^dns:\/\/\//, '').replace(/^https?:\/\//, '')
+  host = host.split('/')[0] ?? ''
+  // An IPv6 literal is bracketed; strip the brackets and any port.
+  if (host.startsWith('[')) return undefined
+  host = host.split(':')[0] ?? ''
+  if (host.includes(':')) return undefined
+  // 127.0.0.1 has four "labels" but no org in its first octet.
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return undefined
+  const labels = host.split('.')
+  return labels.length > 2 ? labels[0] : undefined
 }
 
 function env(name: string): string | undefined {
@@ -196,10 +364,19 @@ function env(name: string): string | undefined {
 function inferAuthMode(auth: AuthOptions): AuthMode {
   if (auth.mode) return auth.mode
   if (auth.session) return 'session'
-  if (auth.apiKey || (auth.clientId && auth.clientSecret)) return 'client_credentials'
+  if (
+    auth.apiKey ||
+    (auth.clientId &&
+      (auth.clientSecret || auth.clientSecretEnvVar || auth.clientSecretLocation))
+  ) {
+    return 'client_credentials'
+  }
   if (auth.bearerToken || auth.getAccessToken) return 'bearer'
+  if (auth.command && auth.command.length > 0) return 'external_command'
   return 'anonymous'
 }
+
+const TEN_MINUTES_MS = 10 * 60 * 1000
 
 function resolveAuth(auth: AuthOptions): ResolvedAuth {
   const authorizationHeader = (auth.authorizationHeader ?? 'authorization').toLowerCase()
@@ -241,22 +418,59 @@ function resolveAuth(auth: AuthOptions): ResolvedAuth {
       const decoded = apiKey ? decodeApiKey(apiKey) : undefined
       const clientId = auth.clientId ?? decoded?.clientId ?? env('FLYTE_CLIENT_ID')
       const clientSecret =
-        auth.clientSecret ?? decoded?.clientSecret ?? env('FLYTE_CLIENT_SECRET')
-      if (!clientId || !clientSecret) {
+        auth.clientSecret ??
+        decoded?.clientSecret ??
+        (auth.clientSecretEnvVar ? env(auth.clientSecretEnvVar) : undefined) ??
+        env('FLYTE_CLIENT_SECRET')
+      if (!clientId || (!clientSecret && !auth.clientSecretLocation)) {
         throw new FlyteConfigError(
-          'client_credentials auth requires apiKey or clientId + clientSecret.',
+          'client_credentials auth requires apiKey, or clientId plus a client secret ' +
+            '(clientSecret, clientSecretEnvVar, or clientSecretLocation).',
         )
       }
       return {
         mode: 'client_credentials',
         clientId,
         clientSecret,
+        clientSecretLocation: clientSecret ? undefined : auth.clientSecretLocation,
         tokenEndpoint: auth.tokenEndpoint,
         scopes: auth.scopes ?? ['all'],
+        scopesExplicit: (auth.scopes?.length ?? 0) > 0,
         audience: auth.audience,
         authorizationHeader,
         clientAuthMethod: auth.clientAuthMethod ?? 'basic',
       }
+    }
+
+    case 'pkce':
+      return {
+        mode: 'pkce',
+        browserTimeoutMs: auth.browserTimeoutMs ?? TEN_MINUTES_MS,
+        scopes: auth.scopes,
+        audience: auth.audience,
+        disableTokenCache: auth.disableTokenCache ?? false,
+        tokenCache: auth.tokenCache,
+        authorizationHeader,
+      }
+
+    case 'device_flow':
+      return {
+        mode: 'device_flow',
+        timeoutMs: auth.deviceFlowTimeoutMs ?? TEN_MINUTES_MS,
+        pollIntervalMs: auth.devicePollIntervalMs ?? 5000,
+        scopes: auth.scopes,
+        audience: auth.audience,
+        onDeviceAuthorization: auth.onDeviceAuthorization,
+        disableTokenCache: auth.disableTokenCache ?? false,
+        tokenCache: auth.tokenCache,
+        authorizationHeader,
+      }
+
+    case 'external_command': {
+      if (!auth.command || auth.command.length === 0) {
+        throw new FlyteConfigError('auth.mode "external_command" requires command.')
+      }
+      return { mode: 'external_command', command: auth.command, authorizationHeader }
     }
 
     case 'anonymous':
@@ -278,8 +492,14 @@ export function resolveConfig(config: FlyteConfig = {}): ResolvedConfig {
       'Missing endpoint. Set config.endpoint, provide an API key, or set FLYTE_ENDPOINT.',
     )
   }
+  const normalizedEndpoint = normalizeEndpoint(endpoint, config.insecure ?? false)
 
-  const org = config.org ?? decoded?.org ?? env('FLYTE_ORG') ?? undefined
+  const decodedOrg = decoded?.org && decoded.org !== 'None' ? decoded.org : undefined
+  const org =
+    config.org ??
+    decodedOrg ??
+    env('FLYTE_ORG') ??
+    orgFromEndpoint(normalizedEndpoint)
 
   // Merge env API key into auth options for resolution when mode not explicit.
   const auth = resolveAuth({
@@ -290,10 +510,25 @@ export function resolveConfig(config: FlyteConfig = {}): ResolvedConfig {
   })
 
   return {
-    endpoint: normalizeEndpoint(endpoint),
+    endpoint: normalizedEndpoint,
     org: org || undefined,
+    project: config.project ?? env('FLYTE_PROJECT') ?? undefined,
+    domain: config.domain ?? env('FLYTE_DOMAIN') ?? undefined,
     headers: { ...(config.headers ?? {}) },
     auth,
+    retry: config.retry,
+    runSource: config.runSource ?? 'web',
+    proxyCommand:
+      authInput.proxyCommand && authInput.proxyCommand.length > 0
+        ? authInput.proxyCommand
+        : undefined,
+    tls:
+      config.insecureSkipVerify || config.caCertFilePath
+        ? {
+            insecureSkipVerify: config.insecureSkipVerify,
+            caCertFilePath: config.caCertFilePath,
+          }
+        : undefined,
   }
 }
 

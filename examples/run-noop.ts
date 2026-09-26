@@ -25,15 +25,13 @@ async function main() {
   })
   console.log('run:', run.name, run.url)
   const details = await run.wait({
-    intervalMs: 2000,
     timeoutMs: 10 * 60_000,
     onPhase: (p) => console.log('  phase:', phaseName(p)),
   })
   console.log('final:', phaseName(details.action?.status?.phase ?? 0))
-  const data = await run.outputs()
-  console.log('output count:', data.outputs?.literals?.length ?? 0)
-  for (const lit of data.outputs?.literals ?? []) {
-    console.log(' ', lit.name)
+  const outputs = await run.outputs()
+  for (const [name, value] of Object.entries(outputs)) {
+    console.log(' ', name, '=', value)
   }
 }
 main().catch((e) => {

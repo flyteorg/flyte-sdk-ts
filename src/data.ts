@@ -65,7 +65,7 @@ export class DataClient {
       throw new FlyteError('CreateUploadLocation did not return a signed URL.')
     }
 
-    const putRes = await fetch(res.signedUrl, {
+    const putRes = await this.ctx.fetch(res.signedUrl, {
       method: 'PUT',
       headers: res.headers ?? {},
       body: params.data as unknown as BodyInit,

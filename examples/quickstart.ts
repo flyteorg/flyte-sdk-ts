@@ -26,13 +26,11 @@ async function main() {
   console.log(`Console: ${run.url}`)
 
   const details = await run.wait({
-    intervalMs: 2000,
     onPhase: (p) => console.log(`  phase: ${phaseName(p)}`),
   })
   console.log(`Final phase: ${phaseName(details.action?.status?.phase ?? 0)}`)
 
-  const { outputs } = await run.outputs()
-  console.log('Outputs:', outputs?.literals.map((l) => l.name))
+  console.log('Outputs:', await run.outputs())
 }
 
 main().catch((err) => {

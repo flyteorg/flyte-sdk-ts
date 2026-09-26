@@ -29,10 +29,26 @@ export interface ClientContext {
   services: Services
   /** Builds a DataProxy client bound to a resolved dataplane cluster base URL. */
   dataproxyForCluster: (baseUrl: string) => Client<typeof DataProxyService>
+  /**
+   * The `fetch` to use for plain HTTP alongside the RPCs — signed-URL uploads
+   * and downloads — so they share the client's TLS trust settings.
+   */
+  fetch: typeof fetch
 }
 
-export function createContext(config: ResolvedConfig): ClientContext {
-  const { transport, clusterTransport } = createTransports(config)
+export interface ContextOptions {
+  /**
+   * Replaces the `fetch` used for every request — e.g. one carrying custom
+   * TLS trust settings (see {@link createTlsFetch}).
+   */
+  fetch?: typeof fetch
+}
+
+export function createContext(
+  config: ResolvedConfig,
+  options: ContextOptions = {},
+): ClientContext {
+  const { transport, clusterTransport } = createTransports(config, options.fetch)
 
   const services: Services = {
     run: createClient(RunService, transport),
@@ -46,5 +62,10 @@ export function createContext(config: ResolvedConfig): ClientContext {
   const dataproxyForCluster = (baseUrl: string): Client<typeof DataProxyService> =>
     createClient(DataProxyService, clusterTransport(baseUrl) as Transport)
 
-  return { config, services, dataproxyForCluster }
+  return {
+    config,
+    services,
+    dataproxyForCluster,
+    fetch: options.fetch ?? globalThis.fetch,
+  }
 }
